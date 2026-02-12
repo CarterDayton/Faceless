@@ -1,5 +1,6 @@
 import cv2
 import mediapipe as mp
+from mediapipe.tasks.python import vision
 
 # Open the default webcam (0). Change to 1 if you want another camera
 cap = cv2.VideoCapture(1)
