@@ -1,0 +1,1 @@
+#camera settings and config variables
