@@ -1,1 +1,7 @@
 #camera settings and config variables
+CAMERA_INDEX = 1
+MAX_FACES = 10
+DETECTION_CONFIDENCE = 0.5
+BLUR_INTENSITY = 27
+EYE_BAR_COLOR = (0, 0, 0)
+EYE_BAR_HEIGHT_RATIO = 0.25
