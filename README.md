@@ -1,6 +1,6 @@
 # Faceless
 
-Faceless is a real-time face privacy filter built with TensorFlow and OpenCV.  
+Faceless is a real-time face privacy filter built with Mediapipe and OpenCV.  
 It detects faces in video streams and applies configurable privacy protections such as eye bars or full-face blurring.
 
 ## Features
