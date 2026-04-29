@@ -1,48 +1,50 @@
 import cv2
-from face_detector import FaceDetector
-from filters import apply_gaussian_blur, apply_black_bar, apply_pixelate
-from config import CAMERA_INDEX, MAX_FACES, DETECTION_CONFIDENCE, BLUR_INTENSITY, PIXEL_SIZE
+import numpy as np
 
-# Initialize face detector and webcam
-detector = FaceDetector(
-    confidence=DETECTION_CONFIDENCE,
-    max_faces=MAX_FACES
-)
-cap = cv2.VideoCapture(CAMERA_INDEX)
-blur_enabled = False
-black_bar_enabled = False
-pixelate_enabled = False
+import config as cfg
+from Face_Effects import FILTERS
+from facial_landmarks import FaceDetector
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+SCALE = 1.0
+KEYMAP = {
+    ord('1'): "blur",
+    ord('2'): "pixelate",
+    ord('3'): "eye_bar",
+}
 
-    # Convert BGR to RGB
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    faces = detector.detect(rgb)
 
-    if blur_enabled and faces:
-        apply_gaussian_blur(frame, faces, BLUR_INTENSITY)
-    if black_bar_enabled and faces:
-        apply_black_bar(frame, faces)
-    if pixelate_enabled and faces:
-        apply_pixelate(frame, faces, PIXEL_SIZE)
+def main():
+    fl = FaceDetector()
+    cap = cv2.VideoCapture(cfg.CAMERA_INDEX)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(0)
 
-    # Show the live webcam feed
-    cv2.imshow("Webcam", frame)
+    effect = "blur"
 
-    # Key press handling
-    key = cv2.waitKey(1) & 0xFF
-    if key == ord("q"):
-        break
-    elif key == ord("g"):
-        blur_enabled = not blur_enabled
-    elif key == ord("b"):
-        black_bar_enabled = not black_bar_enabled
-    elif key == ord("p"):
-        pixelate_enabled = not pixelate_enabled
-    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.resize(frame, None, fx=SCALE, fy=SCALE)
+        height, width, _ = frame.shape
 
-cap.release()
-cv2.destroyAllWindows()
+        landmarks = fl.get_facial_landmarks(frame)
+        if landmarks.size > 0:
+            hull = cv2.convexHull(landmarks)
+            mask = np.zeros((height, width), np.uint8)
+            cv2.fillConvexPoly(mask, hull, 255)
+            frame = FILTERS[effect](frame, landmarks, mask, cfg)
+
+        cv2.imshow("Faceless", frame)
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
+            break
+        if key in KEYMAP:
+            effect = KEYMAP[key]
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
