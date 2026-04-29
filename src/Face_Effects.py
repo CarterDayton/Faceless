@@ -1,100 +1,67 @@
 import cv2
-import mediapipe as mp
 import numpy as np
-from facial_landmarks import FaceDetector
+
+# MediaPipe FaceMesh indices for eye corners and top/bottom of each eye.
+EYE_INDICES = [33, 133, 362, 263, 159, 145, 386, 374]
+
+_prev_landmarks = None
 
 
-def blur_faces(video_source, scale=0.4, blur_strength=(27, 27)):
-    # Load face landmarks
-    fl = FaceDetector()
-
-    cap = cv2.VideoCapture(video_source)
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame = cv2.resize(frame, None, fx=scale, fy=scale)
-        frame_copy = frame.copy()
-        height, width, _ = frame.shape
-
-        # 1. Face landmarks detection
-        landmarks = fl.get_facial_landmarks(frame)
-        if landmarks.size == 0:
-            cv2.imshow("Frame", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-            continue
-        convexhull = cv2.convexHull(landmarks)
-
-        # Face blurring
-        mask = np.zeros((height, width), np.uint8)
-        cv2.fillConvexPoly(mask, convexhull, 255)
-
-        # Extract the face
-        frame_copy = cv2.blur(frame_copy, blur_strength)
-        face_extracted = cv2.bitwise_and(frame_copy, frame_copy, mask=mask)
-
-        # Extract background
-        background_mask = cv2.bitwise_not(mask)
-        background = cv2.bitwise_and(frame, frame, mask=background_mask)
-
-        # Final result
-        result = cv2.add(background, face_extracted)
-
-        cv2.imshow("Frame", result)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-def pixelate_faces(video_source, scale=0.4, pixelation_size=(10, 10)):
-    # Load face landmarks
-    fl = FaceDetector()
-
-    cap = cv2.VideoCapture(video_source)
-    
-    while True:
-        ret, frame = cap.read()
-        if not ret: 
-            break
-        frame = cv2.resize(frame, None, fx=scale, fy=scale)
-        frame_copy = frame.copy()
-        height, width, _ = frame.shape
-
-        # 1. Face landmarks detection
-        landmarks = fl.get_facial_landmarks(frame)
-        if landmarks.size == 0:
-            cv2.imshow("Frame", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-            continue
-        convexhull = cv2.convexHull(landmarks)
-
-        # Face pixelation
-        
+def _composite(frame, modified, mask):
+    face = cv2.bitwise_and(modified, modified, mask=mask)
+    background = cv2.bitwise_and(frame, frame, mask=cv2.bitwise_not(mask))
+    return cv2.add(background, face)
 
 
+def gaussian_blur(frame, landmarks, mask, cfg):
+    _, _, w, _ = cv2.boundingRect(landmarks)
+    base = getattr(cfg, "BLUR_INTENSITY", 27)
+    k = max(3, int(base * (w / 200.0)))
+    if k % 2 == 0:
+        k += 1
+    blurred = cv2.GaussianBlur(frame, (k, k), 0)
+    return _composite(frame, blurred, mask)
 
 
+def pixelate(frame, landmarks, mask, cfg):
+    x, y, w, h = cv2.boundingRect(landmarks)
+    roi = frame[y:y + h, x:x + w]
+    if roi.size == 0:
+        return frame
+    block = max(1, getattr(cfg, "PIXEL_SIZE", 15))
+    sw = max(1, w // block)
+    sh = max(1, h // block)
+    small = cv2.resize(roi, (sw, sh), interpolation=cv2.INTER_LINEAR)
+    pix = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+    out = frame.copy()
+    out[y:y + h, x:x + w] = pix
+    return _composite(frame, out, mask)
 
 
+def eye_bar(frame, landmarks, _mask, cfg):
+    eye_pts = landmarks[EYE_INDICES]
+    ex, ey, ew, eh = cv2.boundingRect(eye_pts)
+    _, _, _, face_h = cv2.boundingRect(landmarks)
+
+    bar_h = max(eh, int(face_h * getattr(cfg, "EYE_BAR_HEIGHT_RATIO", 0.25)))
+    cy = ey + eh // 2
+    pad_x = int(ew * 0.1)
+
+    y1 = max(0, cy - bar_h // 2)
+    y2 = min(frame.shape[0], cy + bar_h // 2)
+    x1 = max(0, ex - pad_x)
+    x2 = min(frame.shape[1], ex + ew + pad_x)
+
+    out = frame.copy()
+    cv2.rectangle(out, (x1, y1), (x2, y2),
+                  getattr(cfg, "EYE_BAR_COLOR", (0, 0, 0)), -1)
+    return out
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    blur_faces("stockVid.mp4")
+# Add a new filter by writing a `(frame, landmarks, mask, cfg) -> frame`
+# function and registering it here.
+FILTERS = {
+    "blur": gaussian_blur,
+    "pixelate": pixelate,
+    "eye_bar": eye_bar,
+}
